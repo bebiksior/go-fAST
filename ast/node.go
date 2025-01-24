@@ -231,3 +231,84 @@ func (y *YieldExpression) Idx1() Idx {
 func (n *ForLoopInitializer) Idx1() Idx { return 0 }
 func (n *ConciseBody) Idx0() Idx        { return n.Idx0() }
 func (n *ConciseBody) Idx1() Idx        { return n.Idx1() }
+
+// ImportSpecifier represents a named import
+type ImportSpecifier struct {
+	Imported *Identifier // The imported name
+	Local    *Identifier // The local binding name
+}
+
+type ExportSpecifier struct {
+	Imported *Identifier // The imported name
+	Local    *Identifier // The local binding name
+}
+
+// ImportDeclaration represents an import statement
+type ImportDeclaration struct {
+	Import     Idx
+	From       Idx
+	Source     *StringLiteral
+	Default    *Identifier       // For "import foo from 'bar'"
+	Specifiers []ImportSpecifier // For "import { foo } from 'bar'"
+}
+
+func (n *ImportDeclaration) _stmt()    {}
+func (n *ImportDeclaration) Idx0() Idx { return n.Import }
+func (n *ImportDeclaration) Idx1() Idx { return n.Source.Idx1() }
+func (n *ImportDeclaration) VisitWith(v Visitor) {
+	if n != nil {
+		v.VisitImportDeclaration(n)
+	}
+}
+func (n *ImportDeclaration) VisitChildrenWith(v Visitor) {
+	if n.Source != nil {
+		v.VisitStringLiteral(n.Source)
+	}
+	if n.Default != nil {
+		v.VisitIdentifier(n.Default)
+	}
+	for _, spec := range n.Specifiers {
+		if spec.Imported != nil {
+			v.VisitIdentifier(spec.Imported)
+		}
+		if spec.Local != nil {
+			v.VisitIdentifier(spec.Local)
+		}
+	}
+}
+
+// ExportDeclaration represents an export statement
+type ExportDeclaration struct {
+	Export     Idx
+	From       Idx
+	Source     *StringLiteral
+	Default    *Expression
+	Specifiers []ExportSpecifier
+}
+
+func (n *ExportDeclaration) _stmt()    {}
+func (n *ExportDeclaration) Idx0() Idx { return n.Export }
+func (n *ExportDeclaration) Idx1() Idx {
+	if n.Source != nil {
+		return n.Source.Idx1()
+	}
+	if n.Default != nil && n.Default.Expr != nil {
+		if idx1, ok := n.Default.Expr.(interface{ Idx1() Idx }); ok {
+			return idx1.Idx1()
+		}
+	}
+	return n.Export
+}
+func (n *ExportDeclaration) VisitWith(v Visitor) {
+	if n != nil {
+		v.VisitExportDeclaration(n)
+	}
+}
+func (n *ExportDeclaration) VisitChildrenWith(v Visitor) {
+	if n.Source != nil {
+		v.VisitStringLiteral(n.Source)
+	}
+	if n.Default != nil {
+		v.VisitExpression(n.Default)
+	}
+}

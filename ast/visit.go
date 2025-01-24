@@ -86,6 +86,8 @@ type Visitor interface {
 	VisitWhileStatement(n *WhileStatement)
 	VisitWithStatement(n *WithStatement)
 	VisitYieldExpression(n *YieldExpression)
+	VisitImportDeclaration(n *ImportDeclaration)
+	VisitExportDeclaration(n *ExportDeclaration)
 }
 type NoopVisitor struct {
 	V Visitor
@@ -341,6 +343,12 @@ func (nv *NoopVisitor) VisitWithStatement(n *WithStatement) {
 	n.VisitChildrenWith(nv.V)
 }
 func (nv *NoopVisitor) VisitYieldExpression(n *YieldExpression) {
+	n.VisitChildrenWith(nv.V)
+}
+func (nv *NoopVisitor) VisitImportDeclaration(n *ImportDeclaration) {
+	n.VisitChildrenWith(nv.V)
+}
+func (nv *NoopVisitor) VisitExportDeclaration(n *ExportDeclaration) {
 	n.VisitChildrenWith(nv.V)
 }
 func (n *ArrayLiteral) VisitWith(v Visitor) {

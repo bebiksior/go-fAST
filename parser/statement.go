@@ -35,6 +35,10 @@ func (p *parser) parseStatement() ast.Stmt {
 	}
 
 	switch p.token {
+	case token.Import:
+		return p.parseImportDeclaration()
+	case token.Export:
+		return p.parseExportDeclaration()
 	case token.Semicolon:
 		return p.parseEmptyStatement()
 	case token.LeftBrace:
@@ -946,5 +950,179 @@ func (p *parser) nextStatement() {
 			return
 		}
 		p.next()
+	}
+}
+
+func (p *parser) parseImportDeclaration() ast.Stmt {
+	importIdx := p.idx
+	p.next() // Move past 'import'
+
+	var defaultIdentifier *ast.Identifier
+	var specifiers []ast.ImportSpecifier
+
+	switch p.token {
+	case token.String:
+		// Handle side-effect-only import
+		source := &ast.StringLiteral{Idx: p.idx, Raw: &p.literal, Value: p.parsedLiteral}
+		p.next()
+		p.semicolon()
+		return &ast.ImportDeclaration{Import: importIdx, From: p.idx, Source: source}
+
+	case token.Identifier, token.As:
+		// Handle default import, allowing "as" as a valid identifier
+		defaultIdentifier = &ast.Identifier{Idx: p.idx, Name: p.literal}
+		p.next()
+		if p.token == token.Comma {
+			p.next() // Move past ','
+			if p.token != token.LeftBrace {
+				p.errorUnexpectedToken(p.token)
+				return &ast.BadStatement{From: importIdx, To: p.idx + 1}
+			}
+		}
+	}
+
+	// Handle named imports
+	if p.token == token.LeftBrace {
+		p.next() // Move past '{'
+		for p.token != token.RightBrace && p.token != token.Eof {
+			// Allow either a standard identifier or the literal "as"
+			if !token.ID(p.token) && p.token != token.As {
+				p.errorUnexpectedToken(p.token)
+				return &ast.BadStatement{From: importIdx, To: p.idx + 1}
+			}
+
+			imported := &ast.Identifier{Idx: p.idx, Name: p.literal}
+			local := imported
+			p.next()
+
+			// Check for renaming via "as"
+			if p.token == token.As {
+				p.next() // Move past 'as'
+				// For the local alias, again allow either identifier or "as"
+				if !token.ID(p.token) && p.token != token.As {
+					p.errorUnexpectedToken(p.token)
+					return &ast.BadStatement{From: importIdx, To: p.idx + 1}
+				}
+				local = &ast.Identifier{Idx: p.idx, Name: p.literal}
+				p.next()
+			}
+
+			specifiers = append(specifiers, ast.ImportSpecifier{Imported: imported, Local: local})
+
+			if p.token == token.Comma {
+				p.next() // Move past ','
+			} else if p.token != token.RightBrace {
+				p.errorUnexpectedToken(p.token)
+				return &ast.BadStatement{From: importIdx, To: p.idx + 1}
+			}
+		}
+		p.next() // Move past '}'
+	} else if p.token == token.Multiply {
+		// Handle namespace import
+		p.next() // Move past '*'
+		if p.token != token.As {
+			p.errorUnexpectedToken(p.token)
+			return &ast.BadStatement{From: importIdx, To: p.idx + 1}
+		}
+		p.next() // Move past 'as'
+		if !token.ID(p.token) && p.token != token.As {
+			p.errorUnexpectedToken(p.token)
+			return &ast.BadStatement{From: importIdx, To: p.idx + 1}
+		}
+		defaultIdentifier = &ast.Identifier{Idx: p.idx, Name: p.literal}
+		p.next()
+	}
+
+	fromIdx := p.idx
+	p.next() // Move past 'from'
+
+	if p.token != token.String {
+		p.errorUnexpectedToken(p.token)
+		return &ast.BadStatement{From: importIdx, To: p.idx + 1}
+	}
+
+	source := &ast.StringLiteral{Idx: p.idx, Raw: &p.literal, Value: p.parsedLiteral}
+	p.next()
+	p.semicolon()
+
+	return &ast.ImportDeclaration{
+		Import:     importIdx,
+		From:       fromIdx,
+		Source:     source,
+		Default:    defaultIdentifier,
+		Specifiers: specifiers,
+	}
+}
+
+func (p *parser) parseExportDeclaration() ast.Stmt {
+	exportIdx := p.idx
+	p.next() // export
+
+	var defaultExpr *ast.Expression
+	if p.token == token.Default {
+		p.next() // default
+		defaultExpr = &ast.Expression{Expr: p.parseExpression()}
+	}
+
+	var specifiers []ast.ExportSpecifier
+	if p.token == token.LeftBrace {
+		p.next() // {
+		for p.token != token.RightBrace {
+			imported := p.literal
+			p.next() // identifier
+
+			var local string
+			if p.token == token.As {
+				p.next() // as
+				local = p.literal
+				p.next() // identifier
+			} else {
+				local = imported
+			}
+
+			specifiers = append(specifiers, ast.ExportSpecifier{
+				Imported: &ast.Identifier{
+					Idx:  p.idx,
+					Name: imported,
+				},
+				Local: &ast.Identifier{
+					Idx:  p.idx,
+					Name: local,
+				},
+			})
+
+			if p.token != token.RightBrace {
+				if p.token != token.Comma {
+					p.errorUnexpectedToken(p.token)
+					return &ast.BadStatement{From: exportIdx, To: p.idx + 1}
+				}
+				p.next() // ,
+				continue
+			}
+		}
+		p.next() // }
+	}
+
+	var source *ast.StringLiteral
+	if p.token == token.From {
+		p.next() // from
+		if p.token != token.String {
+			p.errorUnexpectedToken(p.token)
+			return &ast.BadStatement{From: exportIdx, To: p.idx + 1}
+		}
+		source = &ast.StringLiteral{
+			Idx:   p.idx,
+			Raw:   &p.literal,
+			Value: p.parsedLiteral,
+		}
+		p.next()
+	}
+
+	return &ast.ExportDeclaration{
+		Export:     exportIdx,
+		From:       exportIdx,
+		Source:     source,
+		Default:    defaultExpr,
+		Specifiers: specifiers,
 	}
 }
